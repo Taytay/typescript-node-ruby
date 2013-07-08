@@ -13,32 +13,49 @@ module TypeScript
       # Compile TypeScript source file.
       # @param [String] source_file TypeScript source file
       # @return [TypeScript::Node::CompileResult] compile result
-      def compile_file(source_file)
-        Dir.mktmpdir do |output_dir|
-          output_file = File.join(output_dir, "out.js")
-          cmd = [node, Src.tsc_path, "--out", output_file, source_file]
-          Open3.popen3(*cmd) do |stdin, stdout, stderr, wait_thr|
-            exit_status = wait_thr.value
-            output_js = File.exists?(output_file) ? File.read(output_file) : nil
-            CompileResult.new(
-                output_js,
-                exit_status,
-                stdout.read,
-                stderr.read
-            )
-          end
+      def compile_file(source_file, options = [])
+        cmd_options = []
+
+        cmd = [node, Src.tsc_path]
+
+        #--comments --declaration --sourcemap
+        cmd << options.join(" ")
+
+        if !options.include?("--out")
+          #We need to append our own --out stuff here
+          #If given application.ts compiles everything to application.js
+          output_file = source_file.sub(/\.ts$/, '.js')
+          #output_file = File.join(output_dir, "out.js")
+          cmd += ["--out", output_file]
+        else
+          #we need to find the output_file in the params
+          index_of_out = options.index("--out")
+          output_file = options[index_of_out+1]
+        end
+
+        cmd << source_file
+        Open3.popen3(*cmd) do |stdin, stdout, stderr, wait_thr|
+          exit_status = wait_thr.value
+          #output_file could be a directory
+          output_js = File.file?(output_file) ? File.read(output_file) : nil
+          CompileResult.new(
+              output_js,
+              exit_status,
+              stdout.read,
+              stderr.read
+          )
         end
       end
 
       # Compile TypeScript to JavaScript.
       # @param [String] source TypeScript to be compiled
       # @return [String] Resulted JavaScript
-      def compile(source)
+      def compile(source, options = [])
         js_file = Tempfile.new(["typescript-node", ".ts"])
         begin
           js_file.write(source)
           js_file.close
-          result = compile_file(js_file.path)
+          result = compile_file(js_file.path, options)
           if result.success?
             result.js
           else
